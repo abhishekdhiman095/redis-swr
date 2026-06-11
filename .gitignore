@@ -1,0 +1,19 @@
+# Build artifacts
+*.so
+*.o
+
+# Redis source build files
+redis/src/redis-server
+redis/src/redis-cli
+redis/src/redis-benchmark
+redis/src/*.o
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
