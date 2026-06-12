@@ -1,5 +1,5 @@
 #include "redismodule.h"
-
+#include <string.h>
 
 /*
  * SETSWR command
@@ -13,7 +13,7 @@ int SetSWRCommand(
     // Expected:
     // SETSWR key value SOFT seconds HARD seconds
 
-    if (argc != 7)
+    if (argc != 7 && argc != 9)
     {
         RedisModule_WrongArity(ctx);
         return REDISMODULE_OK;
@@ -127,18 +127,55 @@ RedisModuleString *hardExpiryStr =
         hardExpiry
     );
 
+RedisModuleString *refreshChannel = NULL;
 
-RedisModule_HashSet(
-    key,
-    REDISMODULE_HASH_NONE,
-    RedisModule_CreateString(ctx, "value", 5),
-    argv[2],
-    RedisModule_CreateString(ctx, "softExpiry", 10),
-    softExpiryStr,
-    RedisModule_CreateString(ctx, "hardExpiry", 10),
-    hardExpiryStr,
-    NULL
-);
+if (argc == 9)
+{
+    if (strcasecmp(
+            RedisModule_StringPtrLen(argv[7], NULL),
+            "CHANNEL") != 0)
+    {
+        RedisModule_ReplyWithError(
+            ctx,
+            "Expected CHANNEL"
+        );
+        return REDISMODULE_OK;
+    }
+
+    refreshChannel = argv[8];
+}
+
+if (refreshChannel != NULL)
+    {
+        RedisModule_HashSet(
+            key,
+            REDISMODULE_HASH_NONE,
+            RedisModule_CreateString(ctx, "value", 5),
+            argv[2],
+            RedisModule_CreateString(ctx, "softExpiry", 10),
+            softExpiryStr,
+            RedisModule_CreateString(ctx, "hardExpiry", 10),
+            hardExpiryStr,
+            RedisModule_CreateString(ctx, "refreshChannel", 14),
+            refreshChannel,
+            NULL
+        );
+    }else{
+        RedisModule_HashSet(
+            key,
+            REDISMODULE_HASH_NONE,
+
+            RedisModule_CreateString(ctx, "value", 5),
+            argv[2],
+
+            RedisModule_CreateString(ctx, "softExpiry", 10),
+            softExpiryStr,
+
+            RedisModule_CreateString(ctx, "hardExpiry", 10),
+            hardExpiryStr,
+            NULL
+        );
+    }
 
 
     RedisModule_CloseKey(key);
@@ -221,10 +258,10 @@ int GetSWRCommand(
        Read fields
     */
 
-    RedisModuleString *value = NULL;
+RedisModuleString *value = NULL;
 RedisModuleString *softExpiryStr = NULL;
 RedisModuleString *hardExpiryStr = NULL;
-
+RedisModuleString *refreshChannel = NULL;
 
 RedisModuleString *valueField =
     RedisModule_CreateString(ctx, "value", 5);
@@ -248,6 +285,9 @@ RedisModule_HashGet(
 
     "hardExpiry",
     &hardExpiryStr,
+
+    "refreshChannel",
+    &refreshChannel,
 
     NULL
 );
@@ -349,6 +389,113 @@ RedisModule_FreeString(ctx, hardField);
             ctx,
             value
         );
+
+    /*
+     * Trigger refresh only if channel exists
+     */
+        // if (refreshChannel != NULL)
+        // {
+        //     RedisModule_PublishMessage(
+        //         ctx,
+        //         refreshChannel,
+        //         argv[1]
+        //     );
+        // }
+
+        if (refreshChannel != NULL)
+{
+    /*
+     * Lock key:
+     * swr:lock:<original-key>
+     */
+
+    RedisModuleString *lockKey =
+        RedisModule_CreateStringPrintf(
+            ctx,
+            "swr:lock:%s",
+            RedisModule_StringPtrLen(
+                argv[1],
+                NULL
+            )
+        );
+
+    RedisModuleString *lockValue =
+        RedisModule_CreateString(
+            ctx,
+            "1",
+            1
+        );
+
+    RedisModuleString *nx =
+        RedisModule_CreateString(
+            ctx,
+            "NX",
+            2
+        );
+
+    RedisModuleString *px =
+        RedisModule_CreateString(
+            ctx,
+            "PX",
+            2
+        );
+
+    RedisModuleString *ttl =
+        RedisModule_CreateStringFromLongLong(
+            ctx,
+            30000   /* 30 seconds */
+        );
+
+    /*
+     * Equivalent Redis command:
+     *
+     * SET swr:lock:key 1 NX PX 30000
+     */
+
+    RedisModuleCallReply *reply =
+        RedisModule_Call(
+            ctx,
+            "SET",
+            "sssss",
+            lockKey,
+            lockValue,
+            nx,
+            px,
+            ttl
+        );
+
+    /*
+     * If SET returned OK,
+     * lock acquired.
+     */
+
+    if (reply != NULL &&
+        RedisModule_CallReplyType(reply) ==
+        REDISMODULE_REPLY_STRING)
+    {
+        int subscribers =
+            RedisModule_PublishMessage(
+                ctx,
+                refreshChannel,
+                argv[1]
+            );
+
+        RedisModule_Log(
+            ctx,
+            "notice",
+            "Published refresh event to %d subscribers",
+            subscribers
+        );
+    }
+
+    RedisModule_FreeCallReply(reply);
+
+    RedisModule_FreeString(ctx, lockKey);
+    RedisModule_FreeString(ctx, lockValue);
+    RedisModule_FreeString(ctx, nx);
+    RedisModule_FreeString(ctx, px);
+    RedisModule_FreeString(ctx, ttl);
+}
     }
 
 
