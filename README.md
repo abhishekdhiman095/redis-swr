@@ -37,3 +37,6 @@ With Update Trigger
 `SETSWR product:123 iphone SOFT 5 HARD 30 CHANNEL product-refresh`
 
 `getswr product:123`
+
+Server start command
+`redis-server --loadmodule ./swr.so`
