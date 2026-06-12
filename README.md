@@ -19,12 +19,21 @@ Redis SWR adds these capabilities.
 - [x] Soft expiry metadata
 - [x] Hard expiry metadata
 - [x] GETSWR command
-- [ ] Background refresh
-- [ ] Stampede prevention
-- [ ] Refresh events
+- [x] Background refresh
+- [x] Stampede prevention
+- [x] Refresh events
 - [ ] Redis Cluster support
 
 ## Commands
 
-### SETSWR
+### SETSWR GETSWR
 
+Without Update Trigger
+
+`SETSWR product:123 iphone SOFT 5 HARD 30`
+
+With Update Trigger
+
+`SETSWR product:123 iphone SOFT 5 HARD 30 CHANNEL product-refresh`
+
+`getswr product:123`
